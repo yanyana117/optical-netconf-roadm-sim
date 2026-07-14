@@ -76,7 +76,7 @@ CI (GitHub Actions) runs the unit tests plus `gcovr` line coverage (fail under
 | M1 | C++ device core, HAL, GoogleTest suite, CMake, CI (coverage/cppcheck/valgrind) | ✅ |
 | M2 | YANG module; sysrepo + Netopeer2 NETCONF server; `onsim-netconfd` reconciliation daemon; end-to-end ncclient demo in an ARM Linux container | ✅ |
 | M3 | Protocol Buffers telemetry schema; ZeroMQ pub/sub publisher in the daemon tick loop + Python subscriber CLI | ✅ |
-| M4 | Integration demo recording, debugging notes, CI image build | 🔄 |
+| M4 | Demo transcript + debugging notes in `docs/`; CI builds the image and smoke-runs the demo | ✅ |
 
 ## Try the NETCONF demo (Docker)
 
@@ -110,6 +110,14 @@ config and reconciles the HAL to it; a HAL rejection fails the transaction so
 the datastore never diverges from hardware, and SR_EV_ABORT reconciles back.
 Rate/modulation changes are sequenced through admin-down automatically, the
 way real NE management planes do.
+
+## Notes
+
+- [docs/debugging-notes.md](docs/debugging-notes.md): real root-cause write-ups
+  from building this (version-matrix pinning, ncclient namespaces, a test that
+  was wrong instead of the code).
+- [docs/demo-transcript.txt](docs/demo-transcript.txt): full captured output of
+  `docker run --rm onsim-ne demo`.
 
 ## Honest scope
 

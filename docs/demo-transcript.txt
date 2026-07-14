@@ -1,0 +1,29 @@
+== installing YANG module into sysrepo ==
+== starting onsim-netconfd (device daemon) ==
+== starting netopeer2-server (NETCONF over SSH, port 830) ==
+[WRN]: SR: EV ORIGIN: "onsim-device" "change" ID 5 priority 0 failed (Operation failed).
+[WRN]: SR: EV ORIGIN: "/ietf-netconf:edit-config" "rpc" ID 5 priority 0 failed (Operation failed).
+[ERR]: NP: Failed to send an RPC (Operation failed).
+== NETCONF session established (capabilities: 27) ==
+
+[1] provision transponder 400G/16QAM and bring it up
+[2] provision cross-connects ch40: 1->2, ch41: 1->3
+
+--- operational state: after provisioning ---
+<?xml version="1.0" encoding="UTF-8"?><data xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><device xmlns="urn:onsim:device"><roadm><degrees>4</degrees><cross-connect><name>east</name><in-port>1</in-port><out-port>2</out-port><channel>40</channel></cross-connect><cross-connect><name>west</name><in-port>1</in-port><out-port>3</out-port><channel>41</channel></cross-connect><port><number>1</number><enabled>true</enabled><input-power>-10.04</input-power><output-power>-60.0</output-power><los-alarm>false</los-alarm></port><port><number>2</number><enabled>true</enabled><input-power>-9.93</input-power><output-power>-16.04</output-power><los-alarm>false</los-alarm></port><port><number>3</number><enabled>true</enabled><input-power>-9.97</input-power><output-power>-16.04</output-power><los-alarm>false</los-alarm></port><port><number>4</number><enabled>true</enabled><input-power>-9.99</input-power><output-power>-60.0</output-power><los-alarm>false</los-alarm></port></roadm><transponder><admin-state>up</admin-state><line-rate>r400g</line-rate><modulation>qam16</modulation><state><osnr>30.11</osnr><pre-fec-ber>0.000007787534792925</pre-fec-ber><ber-degrade-alarm>false</ber-degrade-alarm></state></transponder></device></data>
+[3] provoke a wavelength collision (ch40 to port 2 again)
+    device rejected it, as it should: cross-connect 'clash': wavelength collision on output port
+[4] wait for power drift ticks, then read state again
+
+--- operational state: after 3s of drift ---
+<?xml version="1.0" encoding="UTF-8"?><data xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><device xmlns="urn:onsim:device"><roadm><degrees>4</degrees><cross-connect><name>east</name><in-port>1</in-port><out-port>2</out-port><channel>40</channel></cross-connect><cross-connect><name>west</name><in-port>1</in-port><out-port>3</out-port><channel>41</channel></cross-connect><port><number>1</number><enabled>true</enabled><input-power>-10.03</input-power><output-power>-60.0</output-power><los-alarm>false</los-alarm></port><port><number>2</number><enabled>true</enabled><input-power>-9.92</input-power><output-power>-16.03</output-power><los-alarm>false</los-alarm></port><port><number>3</number><enabled>true</enabled><input-power>-9.89</input-power><output-power>-16.03</output-power><los-alarm>false</los-alarm></port><port><number>4</number><enabled>true</enabled><input-power>-10.06</input-power><output-power>-60.0</output-power><los-alarm>false</los-alarm></port></roadm><transponder><admin-state>up</admin-state><line-rate>r400g</line-rate><modulation>qam16</modulation><state><osnr>30.14</osnr><pre-fec-ber>0.000007321498875341</pre-fec-ber><ber-degrade-alarm>false</ber-degrade-alarm></state></transponder></device></data>
+
+Demo complete: config push, state read, and transactional rejection all over real NETCONF.
+
+== protobuf telemetry stream (5 samples) ==
+subscribed to tcp://localhost:5556 (topic 'telemetry')
+tick=8    p1:-60.00dBm p2:-16.04dBm p3:-16.04dBm p4:-60.00dBm  xpdr[up 400G QAM16] osnr=30.15dB ber=7.12e-06
+tick=9    p1:-60.00dBm p2:-16.00dBm p3:-16.00dBm p4:-60.00dBm  xpdr[up 400G QAM16] osnr=30.14dB ber=7.31e-06
+tick=10   p1:-60.00dBm p2:-15.97dBm p3:-15.97dBm p4:-60.00dBm  xpdr[up 400G QAM16] osnr=30.14dB ber=7.31e-06
+tick=11   p1:-60.00dBm p2:-16.01dBm p3:-16.01dBm p4:-60.00dBm  xpdr[up 400G QAM16] osnr=30.23dB ber=5.82e-06
+tick=12   p1:-60.00dBm p2:-15.98dBm p3:-15.98dBm p4:-60.00dBm  xpdr[up 400G QAM16] osnr=30.32dB ber=4.77e-06

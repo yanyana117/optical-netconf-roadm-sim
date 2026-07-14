@@ -42,3 +42,12 @@ jobs:
           cmake --build build-vg -j
           valgrind --error-exitcode=1 --leak-check=full \
                    ./build-vg/onsim_tests
+
+  docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the NE image (CESNET stack from source)
+        run: docker build -t onsim-ne -f docker/Dockerfile .
+      - name: Smoke-run the NETCONF + telemetry demo
+        run: docker run --rm onsim-ne demo | tee demo.out && grep -q "Demo complete" demo.out && grep -qc "tick=" demo.out
