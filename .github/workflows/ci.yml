@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (coverage on)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DONSIM_COVERAGE=ON
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Coverage report (gcov)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcovr
+          gcovr --root . --filter 'src/' --filter 'include/' \
+                --print-summary --fail-under-line 85
+
+      - name: Static analysis (cppcheck)
+        run: |
+          sudo apt-get install -y -qq cppcheck
+          cppcheck --enable=warning,style,performance,portability \
+                   --error-exitcode=1 --inline-suppr \
+                   --suppress=missingIncludeSystem \
+                   -I include src tests
+
+      - name: Valgrind (memory clean)
+        run: |
+          sudo apt-get install -y -qq valgrind
+          cmake -B build-vg -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-vg -j
+          valgrind --error-exitcode=1 --leak-check=full \
+                   ./build-vg/onsim_tests

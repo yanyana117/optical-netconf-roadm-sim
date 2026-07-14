@@ -1,0 +1,7 @@
+build*/
+*.o
+*.a
+*.gcda
+*.gcno
+.DS_Store
+compile_commands.json
