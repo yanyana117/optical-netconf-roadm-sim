@@ -5,9 +5,10 @@ management stack used on real carrier-grade optical platforms: a C/C++ hardware
 abstraction layer, a model-driven management plane (YANG / NETCONF via
 sysrepo + Netopeer2), and a Protocol Buffers telemetry stream.
 
-> Status: **M1 complete** (device core + HAL + unit tests + CI).
-> M2 (YANG/NETCONF management plane), M3 (protobuf/ZeroMQ telemetry), and
-> M4 (ARM Linux packaging) are in progress — see the roadmap below.
+> Status: **M2 complete** — the full model-driven management plane works end
+> to end: a real NETCONF client provisions the device and reads live state
+> through Netopeer2 + sysrepo, running in an ARM Linux container.
+> M3 (protobuf/ZeroMQ telemetry) is next; see the roadmap below.
 
 ## Why
 
@@ -73,9 +74,34 @@ CI (GitHub Actions) runs the unit tests plus `gcovr` line coverage (fail under
 | Milestone | Content | Status |
 |---|---|---|
 | M1 | C++ device core, HAL, GoogleTest suite, CMake, CI (coverage/cppcheck/valgrind) | ✅ |
-| M2 | YANG module for the device; sysrepo + Netopeer2 NETCONF server; C++ plugin bridging datastore ↔ HAL | 🔄 |
+| M2 | YANG module; sysrepo + Netopeer2 NETCONF server; `onsim-netconfd` reconciliation daemon; end-to-end ncclient demo in an ARM Linux container | ✅ |
 | M3 | Protocol Buffers telemetry schema; ZeroMQ pub/sub publisher + Python subscriber | ⬜ |
-| M4 | ARM Linux (Docker/QEMU) packaging, integration demo, debugging notes | ⬜ |
+| M4 | Integration demo recording, debugging notes, CI image build | ⬜ |
+
+## Try the NETCONF demo (Docker)
+
+```bash
+docker build -t onsim-ne -f docker/Dockerfile .
+docker run --rm onsim-ne demo    # or: shell / serve
+```
+
+The demo provisions a 400G/16QAM transponder and two wavelength
+cross-connects over real NETCONF, reads operational state (note output
+power = input power minus the 6 dB insertion loss), then tries to provision
+a colliding wavelength and shows the device rejecting the whole transaction:
+
+```
+[3] provoke a wavelength collision (ch40 to port 2 again)
+    device rejected it, as it should: cross-connect 'clash':
+    wavelength collision on output port
+```
+
+Design note: `onsim-netconfd` applies configuration by declarative
+reconciliation. On every transaction (SR_EV_CHANGE) it reads the candidate
+config and reconciles the HAL to it; a HAL rejection fails the transaction so
+the datastore never diverges from hardware, and SR_EV_ABORT reconciles back.
+Rate/modulation changes are sequenced through admin-down automatically, the
+way real NE management planes do.
 
 ## Honest scope
 

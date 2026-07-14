@@ -19,23 +19,38 @@ if(ONSIM_COVERAGE)
   target_link_options(onsim PUBLIC --coverage)
 endif()
 
+# --- NETCONF management daemon (needs libsysrepo; built in the container) ---
+option(ONSIM_NETCONF "Build the sysrepo/NETCONF management daemon" OFF)
+if(ONSIM_NETCONF)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(SYSREPO REQUIRED IMPORTED_TARGET sysrepo)
+  pkg_check_modules(LIBYANG REQUIRED IMPORTED_TARGET libyang)
+  add_executable(onsim-netconfd netconf/onsim_netconfd.cpp)
+  target_link_libraries(onsim-netconfd PRIVATE onsim PkgConfig::SYSREPO PkgConfig::LIBYANG)
+  target_compile_options(onsim-netconfd PRIVATE -Wall -Wextra)
+  install(TARGETS onsim-netconfd RUNTIME DESTINATION bin)
+endif()
+
 # --- tests ---
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-)
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+option(ONSIM_BUILD_TESTS "Build the GoogleTest unit tests" ON)
+if(ONSIM_BUILD_TESTS)
+  include(FetchContent)
+  FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+  )
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
 
-enable_testing()
-add_executable(onsim_tests
-  tests/test_roadm.cpp
-  tests/test_transponder.cpp
-  tests/test_hal.cpp
-)
-target_link_libraries(onsim_tests PRIVATE onsim gtest_main)
-target_compile_options(onsim_tests PRIVATE -Wall -Wextra)
+  enable_testing()
+  add_executable(onsim_tests
+    tests/test_roadm.cpp
+    tests/test_transponder.cpp
+    tests/test_hal.cpp
+  )
+  target_link_libraries(onsim_tests PRIVATE onsim gtest_main)
+  target_compile_options(onsim_tests PRIVATE -Wall -Wextra)
 
-include(GoogleTest)
-gtest_discover_tests(onsim_tests)
+  include(GoogleTest)
+  gtest_discover_tests(onsim_tests)
+endif()

@@ -1,0 +1,151 @@
+module onsim-device {
+  yang-version 1.1;
+  namespace "urn:onsim:device";
+  prefix onsim;
+
+  organization "optical-netconf-roadm-sim";
+  contact "Xingran Huang <yanyana117@gmail.com>";
+  description
+    "Model-driven management interface for a simulated optical network
+     element: an N-degree ROADM plus one coherent transponder.
+     Configuration subtree drives the device through its C HAL;
+     operational subtrees expose live state and alarms.";
+
+  revision 2026-07-14 {
+    description "Initial revision (project milestone M2).";
+  }
+
+  typedef power-dbm {
+    type decimal64 {
+      fraction-digits 2;
+    }
+    units "dBm";
+    description "Optical power.";
+  }
+
+  container device {
+    description "The simulated optical network element.";
+
+    container roadm {
+      description "Reconfigurable optical add-drop multiplexer.";
+
+      leaf degrees {
+        type uint8;
+        config false;
+        description "Number of line ports on this ROADM.";
+      }
+
+      list cross-connect {
+        key "name";
+        description
+          "Wavelength cross-connects. The device enforces ROADM semantics:
+           a channel may appear at most once per output port and once per
+           input port; violations are rejected with an error.";
+
+        leaf name {
+          type string {
+            length "1..64";
+          }
+          description "Operator-assigned connection identifier.";
+        }
+        leaf in-port {
+          type uint8;
+          mandatory true;
+          description "Input line port (1..degrees).";
+        }
+        leaf out-port {
+          type uint8;
+          mandatory true;
+          description "Output line port (1..degrees).";
+        }
+        leaf channel {
+          type uint8 {
+            range "1..96";
+          }
+          mandatory true;
+          description
+            "ITU-T G.694.1 50 GHz C-band grid channel index.";
+        }
+      }
+
+      list port {
+        key "number";
+        config false;
+        description "Per-port operational state.";
+
+        leaf number {
+          type uint8;
+        }
+        leaf enabled {
+          type boolean;
+        }
+        leaf input-power {
+          type power-dbm;
+        }
+        leaf output-power {
+          type power-dbm;
+        }
+        leaf los-alarm {
+          type boolean;
+          description "Loss of signal on this port's output.";
+        }
+      }
+    }
+
+    container transponder {
+      description "Coherent line-side transponder.";
+
+      leaf admin-state {
+        type enumeration {
+          enum down;
+          enum up;
+        }
+        default "down";
+        description
+          "Administrative state. Line-rate and modulation changes are
+           rejected by the device while admin-state is 'up'.";
+      }
+      leaf line-rate {
+        type enumeration {
+          enum r100g;
+          enum r200g;
+          enum r400g;
+        }
+        default "r100g";
+      }
+      leaf modulation {
+        type enumeration {
+          enum qpsk;
+          enum qam8;
+          enum qam16;
+        }
+        default "qpsk";
+      }
+
+      container state {
+        config false;
+        description "Live transponder state.";
+
+        leaf osnr {
+          type decimal64 {
+            fraction-digits 2;
+          }
+          units "dB";
+          description "Received optical signal-to-noise ratio.";
+        }
+        leaf pre-fec-ber {
+          type decimal64 {
+            fraction-digits 18;
+          }
+          description
+            "Simulated pre-FEC bit error rate (clamped to 1e-18 floor
+             for representation).";
+        }
+        leaf ber-degrade-alarm {
+          type boolean;
+          description "Pre-FEC BER exceeded the SD-FEC threshold (2e-2).";
+        }
+      }
+    }
+  }
+}
