@@ -56,9 +56,9 @@ COPY tools tools
 COPY idl idl
 COPY docker/entrypoint.sh docker/demo_netconf.py docker/
 
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DONSIM_NETCONF=ON -DONSIM_TELEMETRY_DDS=ON -DONSIM_BUILD_TESTS=OFF \
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DONSIM_NETCONF=ON -DONSIM_BUILD_TESTS=OFF \
     && cmake --build build -j2 \
-    && cp build/onsim-netconfd build/onsim-dds-sub /usr/local/bin/ \
+    && cp build/onsim-devd build/onsim-netconfd build/onsim-dds-sub /usr/local/bin/ \
     && protoc --python_out=tools -I proto proto/onsim_telemetry.proto
 
 EXPOSE 830 5556

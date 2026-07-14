@@ -20,20 +20,20 @@ slice in miniature, honestly labeled as a simulation, to demonstrate the
 engineering patterns end to end:
 
 ```
-        NETCONF client (netopeer2-cli / any controller)
-                        │ XML / NETCONF (M2)
+        NETCONF client (ncclient / any controller)
+                        │ XML / NETCONF
         ┌───────────────▼────────────────┐
-        │  Netopeer2 server + sysrepo    │   model-driven management plane
-        │  (YANG datastore)              │
+        │ Netopeer2 + sysrepo (YANG)     │
+        │ onsim-netconfd: management     │  reconciles config transactions
+        │ plane process                  │  into DDS commands; serves state
+        └───────┬───────────▲────────────┘  from the telemetry cache
+   DDS control  │           │ DDS telemetry (protobuf payloads)
+   req/reply    ▼           │
+        ┌───────────────────┴────────────┐
+        │ onsim-devd: device daemon      │  sole owner of the hardware
+        │   C HAL → C++ device core      │  (simulated ROADM + transponder)
         └───────────────┬────────────────┘
-                        │ C HAL API (include/onsim/hal.h)
-        ┌───────────────▼────────────────┐
-        │  C++ device core (this repo)   │   simulated hardware
-        │  ROADM: cross-connects, power  │
-        │  Transponder: OSNR → pre-FEC   │
-        │  BER, alarms                   │
-        └───────────────┬────────────────┘
-                        │ protobuf telemetry (M3)
+                        │ protobuf telemetry
         DDS (Cyclone) + ZeroMQ pub/sub → C++/Python subscribers
 ```
 
@@ -79,6 +79,7 @@ CI (GitHub Actions) runs the unit tests plus `gcovr` line coverage (fail under
 | M3 | Protocol Buffers telemetry schema; ZeroMQ pub/sub publisher in the daemon tick loop + Python subscriber CLI | ✅ |
 | M4 | Demo transcript + debugging notes in `docs/`; CI builds the image and smoke-runs the demo | ✅ |
 | M5 | DDS transport (Eclipse Cyclone DDS): protobuf payloads on topic `onsim_telemetry`, C++ subscriber (`onsim-dds-sub`) | ✅ |
+| M6 | Multi-component split: `onsim-devd` (device daemon, owns the HAL) and `onsim-netconfd` (management plane) exchange provisioning commands (DDS request/reply) and telemetry over the NE-internal DDS bus; a device NACK or a dead device daemon fails the NETCONF transaction cleanly | ✅ |
 
 ## Try the NETCONF demo (Docker)
 

@@ -1,16 +1,16 @@
-// onsim-netconfd: bridges the sysrepo datastore (fronted by the Netopeer2
-// NETCONF server) to the simulated optical hardware behind the C HAL.
+// onsim-netconfd: the management-plane daemon. Bridges the sysrepo datastore
+// (fronted by the Netopeer2 NETCONF server) to the device daemon
+// (onsim-devd) over the NE-internal DDS bus. This process never touches the
+// hardware abstraction layer directly:
 //
-// Architecture: declarative reconciliation. On every configuration
-// transaction (SR_EV_CHANGE) the daemon reads the candidate running config
-// and reconciles the device to it; a HAL rejection (e.g. wavelength
-// collision) fails the transaction, so the NETCONF client gets a clean
-// rpc-error and the datastore never diverges from hardware. On SR_EV_ABORT
-// the device is reconciled back to the pre-change config.
-//
-// Operational state (port powers, alarms, BER) is served live from the HAL
-// through operational get callbacks; a background thread ticks the
-// simulation once per second.
+//   - configuration: declarative reconciliation. On SR_EV_CHANGE the
+//     candidate config is read and pushed to onsim-devd as DDS
+//     request/reply commands; a device NACK (or an unreachable device
+//     daemon) fails the NETCONF transaction with a clean rpc-error.
+//     SR_EV_ABORT reconciles back to the pre-change config.
+//   - operational state: served from a cache of the latest DDS telemetry
+//     sample published by onsim-devd, the way real NEs answer state reads
+//     without a round trip to hardware.
 
 #include <sysrepo.h>
 #include <libyang/libyang.h>
@@ -23,43 +23,37 @@
 #include <map>
 #include <string>
 #include <thread>
-#include <vector>
 
-#include "onsim/hal.h"
-
-#ifdef ONSIM_TELEMETRY
-#include "telemetry_pub.hpp"
-#endif
-#ifdef ONSIM_TELEMETRY_DDS
-#include "telemetry_dds.hpp"
-#endif
+#include "dds_bus.hpp"
 
 namespace {
 
 constexpr const char* kModule = "onsim-device";
-constexpr int kDegrees = 4;
 
-onsim_device* g_dev = nullptr;
+onsim::DdsControlClient* g_bus = nullptr;
+onsim::DdsTelemetryCache* g_cache = nullptr;
 std::atomic<bool> g_running{true};
 
 struct XcConfig {
-    int inPort = 0;
-    int outPort = 0;
-    int channel = 0;
+    int64_t inPort = 0;
+    int64_t outPort = 0;
+    int64_t channel = 0;
+    bool operator==(const XcConfig& o) const {
+        return inPort == o.inPort && outPort == o.outPort && channel == o.channel;
+    }
 };
 
 struct DeviceConfig {
     std::map<std::string, XcConfig> xcs;
     bool adminUp = false;
-    int rateGbps = 100;
-    int modulation = 0;  // 0 qpsk, 1 qam8, 2 qam16
+    int64_t rateGbps = 100;
+    int64_t modulation = 0;  // 0 qpsk, 1 qam8, 2 qam16
 };
 
-int leafInt(const lyd_node* node) {
-    return std::atoi(lyd_get_value(node));
+int64_t leafInt(const lyd_node* node) {
+    return std::atoll(lyd_get_value(node));
 }
 
-// Read the full onsim-device config subtree from a sysrepo session.
 DeviceConfig readConfig(sr_session_ctx_t* session) {
     DeviceConfig cfg;
     sr_data_t* data = nullptr;
@@ -100,31 +94,30 @@ DeviceConfig readConfig(sr_session_ctx_t* session) {
     return cfg;
 }
 
-// Drive the HAL to match `cfg`. Returns an empty string on success or a
-// human-readable error (which fails the NETCONF transaction).
+// Drive the device (over the DDS bus) to match `cfg`.
 std::string reconcile(const DeviceConfig& cfg) {
-    // --- transponder: sequence admin-down -> rate/mod -> desired admin ---
-    onsim_xpdr_state xs{};
-    onsim_xpdr_get(g_dev, &xs);
-    if (xs.line_rate_gbps != cfg.rateGbps || xs.modulation != cfg.modulation) {
-        onsim_xpdr_set_admin(g_dev, 0);
-        if (onsim_xpdr_set_rate(g_dev, cfg.rateGbps) != ONSIM_OK)
-            return std::string("line-rate: ") + onsim_last_error(g_dev);
-        if (onsim_xpdr_set_modulation(g_dev, cfg.modulation) != ONSIM_OK)
-            return std::string("modulation: ") + onsim_last_error(g_dev);
-    }
-    onsim_xpdr_set_admin(g_dev, cfg.adminUp ? 1 : 0);
+    static std::map<std::string, XcConfig> applied;   // last config we pushed
+    static int64_t appliedRate = 100, appliedMod = 0;
 
-    // --- cross-connects: delete stale, then add missing ---
-    // The HAL has no bulk-read of XCs by name with params, so the daemon
-    // tracks desired state directly: delete names not in cfg, re-add changed.
-    static std::map<std::string, XcConfig> applied;  // daemon-lifetime cache
+    // Transponder: sequence rate/modulation changes through admin-down, the
+    // way NE management planes do, then set the desired admin state.
+    if (appliedRate != cfg.rateGbps || appliedMod != cfg.modulation) {
+        g_bus->call("xpdr_admin", "", 0);
+        onsim::ControlResult r = g_bus->call("xpdr_rate", "", cfg.rateGbps);
+        if (!r.ok()) return "line-rate: " + r.error;
+        r = g_bus->call("xpdr_mod", "", cfg.modulation);
+        if (!r.ok()) return "modulation: " + r.error;
+        appliedRate = cfg.rateGbps;
+        appliedMod = cfg.modulation;
+    }
+    onsim::ControlResult r = g_bus->call("xpdr_admin", "", cfg.adminUp ? 1 : 0);
+    if (!r.ok()) return "admin-state: " + r.error;
+
+    // Cross-connects: delete stale, then add missing.
     for (auto it = applied.begin(); it != applied.end();) {
         auto want = cfg.xcs.find(it->first);
-        bool changed = want == cfg.xcs.end() ||
-                       std::memcmp(&want->second, &it->second, sizeof(XcConfig)) != 0;
-        if (changed) {
-            onsim_xc_delete(g_dev, it->first.c_str());
+        if (want == cfg.xcs.end() || !(want->second == it->second)) {
+            g_bus->call("xc_del", it->first);
             it = applied.erase(it);
         } else {
             ++it;
@@ -132,23 +125,16 @@ std::string reconcile(const DeviceConfig& cfg) {
     }
     for (const auto& [name, xc] : cfg.xcs) {
         if (applied.count(name) != 0) continue;
-        onsim_status st = onsim_xc_add(g_dev, name.c_str(), xc.inPort,
-                                       xc.outPort, xc.channel);
-        if (st != ONSIM_OK) {
-            return "cross-connect '" + name + "': " + onsim_last_error(g_dev);
-        }
+        r = g_bus->call("xc_add", name, xc.inPort, xc.outPort, xc.channel);
+        if (!r.ok()) return "cross-connect '" + name + "': " + r.error;
         applied[name] = xc;
     }
     return "";
 }
 
-int configChangeCb(sr_session_ctx_t* session, uint32_t /*sub_id*/,
-                   const char* /*module*/, const char* /*xpath*/,
-                   sr_event_t event, uint32_t /*request_id*/,
-                   void* /*private_data*/) {
+int configChangeCb(sr_session_ctx_t* session, uint32_t, const char*,
+                   const char*, sr_event_t event, uint32_t, void*) {
     if (event != SR_EV_CHANGE && event != SR_EV_ABORT) return SR_ERR_OK;
-    // In CHANGE the session exposes the candidate config; in ABORT it
-    // exposes the pre-change config — the same reconcile handles rollback.
     std::string err = reconcile(readConfig(session));
     if (!err.empty() && event == SR_EV_CHANGE) {
         sr_session_set_error_message(session, "%s", err.c_str());
@@ -176,21 +162,29 @@ std::string fmt(double v, int digits) {
     return buf;
 }
 
+// Wait briefly for the first telemetry sample so early reads don't miss.
+bool cacheReady() {
+    for (int i = 0; i < 30; ++i) {
+        if (g_cache->refresh()) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return false;
+}
+
 int roadmOperCb(sr_session_ctx_t* session, uint32_t, const char*, const char*,
                 const char*, uint32_t, lyd_node** parent, void*) {
+    if (!cacheReady()) return SR_ERR_OK;
+    const onsim::telemetry::TelemetrySample& s = g_cache->latest();
     const ly_ctx* ctx = sr_session_acquire_context(session);
-    int rc = 0;
-    rc += addLeaf(ctx, parent, "/onsim-device:device/roadm/degrees",
-                  std::to_string(kDegrees));
-    for (int p = 1; p <= kDegrees && rc == 0; ++p) {
-        onsim_port_state st{};
-        if (onsim_port_get(g_dev, p, &st) != ONSIM_OK) continue;
-        std::string base =
-            "/onsim-device:device/roadm/port[number='" + std::to_string(p) + "']";
-        rc += addLeaf(ctx, parent, base + "/enabled", st.enabled ? "true" : "false");
-        rc += addLeaf(ctx, parent, base + "/input-power", fmt(st.input_power_dbm, 2));
-        rc += addLeaf(ctx, parent, base + "/output-power", fmt(st.output_power_dbm, 2));
-        rc += addLeaf(ctx, parent, base + "/los-alarm", st.los_alarm ? "true" : "false");
+    int rc = addLeaf(ctx, parent, "/onsim-device:device/roadm/degrees",
+                     std::to_string(s.ports_size()));
+    for (const auto& p : s.ports()) {
+        std::string base = "/onsim-device:device/roadm/port[number='" +
+                           std::to_string(p.number()) + "']";
+        rc += addLeaf(ctx, parent, base + "/enabled", p.enabled() ? "true" : "false");
+        rc += addLeaf(ctx, parent, base + "/input-power", fmt(p.input_power_dbm(), 2));
+        rc += addLeaf(ctx, parent, base + "/output-power", fmt(p.output_power_dbm(), 2));
+        rc += addLeaf(ctx, parent, base + "/los-alarm", p.los_alarm() ? "true" : "false");
     }
     sr_session_release_context(session);
     return rc == 0 ? SR_ERR_OK : SR_ERR_INTERNAL;
@@ -198,17 +192,16 @@ int roadmOperCb(sr_session_ctx_t* session, uint32_t, const char*, const char*,
 
 int xpdrOperCb(sr_session_ctx_t* session, uint32_t, const char*, const char*,
                const char*, uint32_t, lyd_node** parent, void*) {
+    if (!cacheReady()) return SR_ERR_OK;
+    const auto& xp = g_cache->latest().transponder();
     const ly_ctx* ctx = sr_session_acquire_context(session);
-    onsim_xpdr_state xs{};
-    onsim_xpdr_get(g_dev, &xs);
-    double ber = xs.pre_fec_ber;
-    if (ber > 0 && ber < 1e-18) ber = 1e-18;  // decimal64 fraction-digits 18 floor
-    int rc = 0;
+    double ber = xp.pre_fec_ber();
+    if (ber > 0 && ber < 1e-18) ber = 1e-18;  // decimal64 fraction-digits floor
     const std::string base = "/onsim-device:device/transponder/state";
-    rc += addLeaf(ctx, parent, base + "/osnr", fmt(xs.osnr_db, 2));
+    int rc = addLeaf(ctx, parent, base + "/osnr", fmt(xp.osnr_db(), 2));
     rc += addLeaf(ctx, parent, base + "/pre-fec-ber", fmt(ber, 18));
     rc += addLeaf(ctx, parent, base + "/ber-degrade-alarm",
-                  xs.ber_degrade_alarm ? "true" : "false");
+                  xp.ber_degrade_alarm() ? "true" : "false");
     sr_session_release_context(session);
     return rc == 0 ? SR_ERR_OK : SR_ERR_INTERNAL;
 }
@@ -218,11 +211,10 @@ void onSignal(int) { g_running = false; }
 }  // namespace
 
 int main() {
-    g_dev = onsim_create(kDegrees, 2026);
-    if (g_dev == nullptr) {
-        std::fprintf(stderr, "failed to create device\n");
-        return 1;
-    }
+    onsim::DdsControlClient bus;
+    onsim::DdsTelemetryCache cache;
+    g_bus = &bus;
+    g_cache = &cache;
 
     sr_conn_ctx_t* conn = nullptr;
     sr_session_ctx_t* session = nullptr;
@@ -251,34 +243,15 @@ int main() {
 
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
+    std::printf("onsim-netconfd: management plane up (device access via DDS bus)\n");
 
-#ifdef ONSIM_TELEMETRY
-    onsim::TelemetryPublisher telemetry("tcp://*:5556");
-    std::printf("onsim-netconfd: telemetry PUB on tcp://*:5556\n");
-#endif
-#ifdef ONSIM_TELEMETRY_DDS
-    onsim::DdsTelemetryPublisher ddsTelemetry;
-    std::printf("onsim-netconfd: DDS telemetry on topic onsim_telemetry\n");
-#endif
-    std::printf("onsim-netconfd: %d-degree ROADM + transponder ready\n", kDegrees);
-
-    uint64_t tick = 0;
     while (g_running) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        onsim_tick(g_dev);
-        ++tick;
-#ifdef ONSIM_TELEMETRY
-        const std::string payload = onsim::serializeTelemetry(g_dev, kDegrees, tick);
-        telemetry.publish(payload);
-#ifdef ONSIM_TELEMETRY_DDS
-        ddsTelemetry.publish(tick, payload);
-#endif
-#endif
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        cache.refresh();
     }
 
     sr_unsubscribe(sub);
     sr_session_stop(session);
     sr_disconnect(conn);
-    onsim_destroy(g_dev);
     return 0;
 }

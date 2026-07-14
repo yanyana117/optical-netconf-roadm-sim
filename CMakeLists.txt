@@ -20,50 +20,50 @@ if(ONSIM_COVERAGE)
 endif()
 
 # --- NETCONF management daemon (needs libsysrepo; built in the container) ---
-option(ONSIM_NETCONF "Build the sysrepo/NETCONF management daemon" OFF)
+option(ONSIM_NETCONF "Build the NE daemons (management plane + device daemon)" OFF)
 if(ONSIM_NETCONF)
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(SYSREPO REQUIRED IMPORTED_TARGET sysrepo)
   pkg_check_modules(LIBYANG REQUIRED IMPORTED_TARGET libyang)
+  pkg_check_modules(ZMQ REQUIRED IMPORTED_TARGET libzmq)
+  find_package(Protobuf REQUIRED)
+  find_package(CycloneDDS REQUIRED)
+
+  # protobuf telemetry schema (shared by both daemons and the subscriber)
+  protobuf_generate_cpp(TELEM_SRCS TELEM_HDRS proto/onsim_telemetry.proto)
+  add_library(onsim_telemetry_pb STATIC ${TELEM_SRCS})
+  target_include_directories(onsim_telemetry_pb PUBLIC ${CMAKE_CURRENT_BINARY_DIR} ${Protobuf_INCLUDE_DIRS})
+  target_link_libraries(onsim_telemetry_pb PUBLIC ${Protobuf_LIBRARIES})
+
+  # DDS types for the internal bus (control commands + telemetry blob)
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/onsim_dds.c ${CMAKE_CURRENT_BINARY_DIR}/onsim_dds.h
+    COMMAND CycloneDDS::idlc -l c ${CMAKE_CURRENT_SOURCE_DIR}/idl/onsim_dds.idl
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS idl/onsim_dds.idl)
+  add_library(onsim_dds_types STATIC ${CMAKE_CURRENT_BINARY_DIR}/onsim_dds.c)
+  set_target_properties(onsim_dds_types PROPERTIES LINKER_LANGUAGE C)
+  target_include_directories(onsim_dds_types PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+  target_link_libraries(onsim_dds_types PUBLIC CycloneDDS::ddsc)
+
+  # device daemon: owns the HAL, serves the DDS control bus, publishes telemetry
+  add_executable(onsim-devd netconf/onsim_devd.cpp)
+  target_include_directories(onsim-devd PRIVATE netconf)
+  target_link_libraries(onsim-devd PRIVATE onsim onsim_dds_types onsim_telemetry_pb PkgConfig::ZMQ)
+  target_compile_options(onsim-devd PRIVATE -Wall -Wextra)
+
+  # management plane: sysrepo/NETCONF <-> DDS bus (never touches the HAL)
   add_executable(onsim-netconfd netconf/onsim_netconfd.cpp)
-  target_link_libraries(onsim-netconfd PRIVATE onsim PkgConfig::SYSREPO PkgConfig::LIBYANG)
+  target_include_directories(onsim-netconfd PRIVATE netconf)
+  target_link_libraries(onsim-netconfd PRIVATE PkgConfig::SYSREPO PkgConfig::LIBYANG onsim_dds_types onsim_telemetry_pb)
   target_compile_options(onsim-netconfd PRIVATE -Wall -Wextra)
 
-  option(ONSIM_TELEMETRY "Publish protobuf telemetry over ZeroMQ" ON)
-  if(ONSIM_TELEMETRY)
-    find_package(Protobuf REQUIRED)
-    pkg_check_modules(ZMQ REQUIRED IMPORTED_TARGET libzmq)
-    protobuf_generate_cpp(TELEM_SRCS TELEM_HDRS proto/onsim_telemetry.proto)
-    add_library(onsim_telemetry_pb STATIC ${TELEM_SRCS})
-    target_include_directories(onsim_telemetry_pb PUBLIC ${CMAKE_CURRENT_BINARY_DIR} ${Protobuf_INCLUDE_DIRS})
-    target_link_libraries(onsim_telemetry_pb PUBLIC ${Protobuf_LIBRARIES})
-    target_compile_definitions(onsim-netconfd PRIVATE ONSIM_TELEMETRY)
-    target_include_directories(onsim-netconfd PRIVATE netconf)
-    target_link_libraries(onsim-netconfd PRIVATE onsim_telemetry_pb PkgConfig::ZMQ)
+  # external DDS telemetry subscriber (demo / debugging)
+  add_executable(onsim-dds-sub tools/dds_sub.cpp)
+  target_include_directories(onsim-dds-sub PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  target_link_libraries(onsim-dds-sub PRIVATE onsim_dds_types onsim_telemetry_pb)
 
-    option(ONSIM_TELEMETRY_DDS "Also publish telemetry over Cyclone DDS" OFF)
-    if(ONSIM_TELEMETRY_DDS)
-      find_package(CycloneDDS REQUIRED)
-      add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/onsim_dds.c ${CMAKE_CURRENT_BINARY_DIR}/onsim_dds.h
-        COMMAND CycloneDDS::idlc -l c ${CMAKE_CURRENT_SOURCE_DIR}/idl/onsim_dds.idl
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        DEPENDS idl/onsim_dds.idl)
-      add_library(onsim_dds_types STATIC ${CMAKE_CURRENT_BINARY_DIR}/onsim_dds.c)
-      set_target_properties(onsim_dds_types PROPERTIES LINKER_LANGUAGE C)
-      target_include_directories(onsim_dds_types PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
-      target_link_libraries(onsim_dds_types PUBLIC CycloneDDS::ddsc)
-      target_compile_definitions(onsim-netconfd PRIVATE ONSIM_TELEMETRY_DDS)
-      target_link_libraries(onsim-netconfd PRIVATE onsim_dds_types)
-
-      add_executable(onsim-dds-sub tools/dds_sub.cpp)
-      target_include_directories(onsim-dds-sub PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-      target_link_libraries(onsim-dds-sub PRIVATE onsim_dds_types onsim_telemetry_pb)
-      install(TARGETS onsim-dds-sub RUNTIME DESTINATION bin)
-    endif()
-  endif()
-
-  install(TARGETS onsim-netconfd RUNTIME DESTINATION bin)
+  install(TARGETS onsim-devd onsim-netconfd onsim-dds-sub RUNTIME DESTINATION bin)
 endif()
 
 # --- tests ---

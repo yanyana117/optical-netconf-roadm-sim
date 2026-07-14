@@ -8,7 +8,11 @@ echo "== installing YANG module into sysrepo =="
 sysrepoctl -i /onsim/yang/onsim-device.yang 2>/dev/null || \
     sysrepoctl -U /onsim/yang/onsim-device.yang
 
-echo "== starting onsim-netconfd (device daemon) =="
+echo "== starting onsim-devd (device daemon, owns the HAL) =="
+onsim-devd &
+sleep 1
+
+echo "== starting onsim-netconfd (management plane, talks DDS to the device) =="
 onsim-netconfd &
 sleep 1
 

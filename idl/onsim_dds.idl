@@ -1,9 +1,28 @@
-// DDS type for the NE telemetry stream: the payload is the serialized
-// onsim.telemetry.TelemetrySample Protocol Buffers message, so the schema
-// stays in one place (proto/) regardless of transport.
+// DDS types for the NE's internal message bus and telemetry stream.
+//
+// Telemetry payload is the serialized onsim.telemetry.TelemetrySample
+// Protocol Buffers message, so the schema stays single-sourced in proto/.
+// Control commands/replies form a request-reply pattern (correlated by seq)
+// between the management plane (onsim-netconfd) and the device daemon
+// (onsim-devd) -- the same multi-component pattern real network elements use.
 module onsim {
   struct TelemetryBlob {
     unsigned long long tick;
     sequence<octet> payload;
+  };
+
+  struct ControlCommand {
+    unsigned long long seq;
+    string action;   // xc_add | xc_del | xpdr_admin | xpdr_rate | xpdr_mod
+    string name;     // cross-connect name (xc_* actions)
+    long long a;     // in-port / admin flag / rate / modulation
+    long long b;     // out-port
+    long long c;     // channel
+  };
+
+  struct ControlReply {
+    unsigned long long seq;
+    long long status;  // 0 = OK, nonzero = onsim_status error code
+    string error;      // human-readable device error for the rpc-error
   };
 };
