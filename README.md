@@ -3,7 +3,8 @@
 A **simulated optical network element** (ROADM + coherent transponder) with the
 management stack used on real carrier-grade optical platforms: a C/C++ hardware
 abstraction layer, a model-driven management plane (YANG / NETCONF via
-sysrepo + Netopeer2), and a Protocol Buffers telemetry stream.
+sysrepo + Netopeer2), and Protocol Buffers telemetry over **DDS (Cyclone DDS)**
+and ZeroMQ pub/sub.
 
 > Status: **M3 complete** — the full vertical slice works end to end in an
 > ARM Linux container: a real NETCONF client provisions the device through
@@ -33,7 +34,7 @@ engineering patterns end to end:
         │  BER, alarms                   │
         └───────────────┬────────────────┘
                         │ protobuf telemetry (M3)
-                 ZeroMQ pub/sub → subscriber CLI
+        DDS (Cyclone) + ZeroMQ pub/sub → C++/Python subscribers
 ```
 
 ## What is modeled (M1)
@@ -77,6 +78,7 @@ CI (GitHub Actions) runs the unit tests plus `gcovr` line coverage (fail under
 | M2 | YANG module; sysrepo + Netopeer2 NETCONF server; `onsim-netconfd` reconciliation daemon; end-to-end ncclient demo in an ARM Linux container | ✅ |
 | M3 | Protocol Buffers telemetry schema; ZeroMQ pub/sub publisher in the daemon tick loop + Python subscriber CLI | ✅ |
 | M4 | Demo transcript + debugging notes in `docs/`; CI builds the image and smoke-runs the demo | ✅ |
+| M5 | DDS transport (Eclipse Cyclone DDS): protobuf payloads on topic `onsim_telemetry`, C++ subscriber (`onsim-dds-sub`) | ✅ |
 
 ## Try the NETCONF demo (Docker)
 

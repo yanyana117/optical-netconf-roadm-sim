@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(optical_netconf_roadm_sim CXX)
+project(optical_netconf_roadm_sim C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,6 +40,27 @@ if(ONSIM_NETCONF)
     target_compile_definitions(onsim-netconfd PRIVATE ONSIM_TELEMETRY)
     target_include_directories(onsim-netconfd PRIVATE netconf)
     target_link_libraries(onsim-netconfd PRIVATE onsim_telemetry_pb PkgConfig::ZMQ)
+
+    option(ONSIM_TELEMETRY_DDS "Also publish telemetry over Cyclone DDS" OFF)
+    if(ONSIM_TELEMETRY_DDS)
+      find_package(CycloneDDS REQUIRED)
+      add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/onsim_dds.c ${CMAKE_CURRENT_BINARY_DIR}/onsim_dds.h
+        COMMAND CycloneDDS::idlc -l c ${CMAKE_CURRENT_SOURCE_DIR}/idl/onsim_dds.idl
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        DEPENDS idl/onsim_dds.idl)
+      add_library(onsim_dds_types STATIC ${CMAKE_CURRENT_BINARY_DIR}/onsim_dds.c)
+      set_target_properties(onsim_dds_types PROPERTIES LINKER_LANGUAGE C)
+      target_include_directories(onsim_dds_types PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+      target_link_libraries(onsim_dds_types PUBLIC CycloneDDS::ddsc)
+      target_compile_definitions(onsim-netconfd PRIVATE ONSIM_TELEMETRY_DDS)
+      target_link_libraries(onsim-netconfd PRIVATE onsim_dds_types)
+
+      add_executable(onsim-dds-sub tools/dds_sub.cpp)
+      target_include_directories(onsim-dds-sub PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+      target_link_libraries(onsim-dds-sub PRIVATE onsim_dds_types onsim_telemetry_pb)
+      install(TARGETS onsim-dds-sub RUNTIME DESTINATION bin)
+    endif()
   endif()
 
   install(TARGETS onsim-netconfd RUNTIME DESTINATION bin)

@@ -30,6 +30,9 @@
 #ifdef ONSIM_TELEMETRY
 #include "telemetry_pub.hpp"
 #endif
+#ifdef ONSIM_TELEMETRY_DDS
+#include "telemetry_dds.hpp"
+#endif
 
 namespace {
 
@@ -250,8 +253,12 @@ int main() {
     std::signal(SIGTERM, onSignal);
 
 #ifdef ONSIM_TELEMETRY
-    onsim::TelemetryPublisher telemetry("tcp://*:5556", kDegrees);
+    onsim::TelemetryPublisher telemetry("tcp://*:5556");
     std::printf("onsim-netconfd: telemetry PUB on tcp://*:5556\n");
+#endif
+#ifdef ONSIM_TELEMETRY_DDS
+    onsim::DdsTelemetryPublisher ddsTelemetry;
+    std::printf("onsim-netconfd: DDS telemetry on topic onsim_telemetry\n");
 #endif
     std::printf("onsim-netconfd: %d-degree ROADM + transponder ready\n", kDegrees);
 
@@ -261,7 +268,11 @@ int main() {
         onsim_tick(g_dev);
         ++tick;
 #ifdef ONSIM_TELEMETRY
-        telemetry.publish(g_dev, tick);
+        const std::string payload = onsim::serializeTelemetry(g_dev, kDegrees, tick);
+        telemetry.publish(payload);
+#ifdef ONSIM_TELEMETRY_DDS
+        ddsTelemetry.publish(tick, payload);
+#endif
 #endif
     }
 

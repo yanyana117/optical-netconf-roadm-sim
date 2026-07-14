@@ -1,0 +1,9 @@
+// DDS type for the NE telemetry stream: the payload is the serialized
+// onsim.telemetry.TelemetrySample Protocol Buffers message, so the schema
+// stays in one place (proto/) regardless of transport.
+module onsim {
+  struct TelemetryBlob {
+    unsigned long long tick;
+    sequence<octet> payload;
+  };
+};

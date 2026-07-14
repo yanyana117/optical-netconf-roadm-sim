@@ -25,6 +25,9 @@ case "${1:-demo}" in
     echo ""
     echo "== protobuf telemetry stream (5 samples) =="
     PYTHONPATH=/onsim/tools python3 /onsim/tools/telemetry_sub.py --samples 5
+    echo ""
+    echo "== DDS telemetry (Cyclone DDS, protobuf payloads, 3 samples) =="
+    onsim-dds-sub 3
     ;;
   shell)
     exec bash

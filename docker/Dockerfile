@@ -39,6 +39,11 @@ RUN git clone --depth 1 -b ${NETOPEER2_VER} https://github.com/CESNET/netopeer2.
     && cmake --build /tmp/netopeer2/build -j2 && cmake --install /tmp/netopeer2/build \
     && ldconfig && rm -rf /tmp/netopeer2
 
+RUN git clone --depth 1 -b 0.10.5 https://github.com/eclipse-cyclonedds/cyclonedds.git /tmp/cyclonedds \
+    && cmake -S /tmp/cyclonedds -B /tmp/cyclonedds/build -DCMAKE_BUILD_TYPE=Release -DBUILD_IDLC=ON \
+    && cmake --build /tmp/cyclonedds/build -j2 && cmake --install /tmp/cyclonedds/build \
+    && ldconfig && rm -rf /tmp/cyclonedds
+
 # --- the simulated device + its management daemon ---
 WORKDIR /onsim
 COPY CMakeLists.txt LICENSE ./
@@ -48,11 +53,12 @@ COPY netconf netconf
 COPY yang yang
 COPY proto proto
 COPY tools tools
+COPY idl idl
 COPY docker/entrypoint.sh docker/demo_netconf.py docker/
 
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DONSIM_NETCONF=ON -DONSIM_BUILD_TESTS=OFF \
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DONSIM_NETCONF=ON -DONSIM_TELEMETRY_DDS=ON -DONSIM_BUILD_TESTS=OFF \
     && cmake --build build -j2 \
-    && cp build/onsim-netconfd /usr/local/bin/ \
+    && cp build/onsim-netconfd build/onsim-dds-sub /usr/local/bin/ \
     && protoc --python_out=tools -I proto proto/onsim_telemetry.proto
 
 EXPOSE 830 5556
