@@ -29,10 +29,11 @@ jobs:
       - name: Static analysis (cppcheck)
         run: |
           sudo apt-get install -y -qq cppcheck
+          # tests/ are excluded: cppcheck cannot parse GoogleTest macros
           cppcheck --enable=warning,style,performance,portability \
                    --error-exitcode=1 --inline-suppr \
                    --suppress=missingIncludeSystem \
-                   -I include src tests
+                   -I include src netconf
 
       - name: Valgrind (memory clean)
         run: |

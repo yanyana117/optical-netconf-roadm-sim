@@ -35,8 +35,8 @@ struct PortState {
 //    raises a LOS alarm on the output port.
 class RoadmDevice {
 public:
-    RoadmDevice(int degrees, double insertionLossDb = 6.0,
-                double losThresholdDbm = -28.0, uint64_t seed = 42);
+    explicit RoadmDevice(int degrees, double insertionLossDb = 6.0,
+                         double losThresholdDbm = -28.0, uint64_t seed = 42);
 
     int degrees() const { return degrees_; }
 
