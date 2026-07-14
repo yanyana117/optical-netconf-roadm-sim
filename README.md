@@ -5,10 +5,10 @@ management stack used on real carrier-grade optical platforms: a C/C++ hardware
 abstraction layer, a model-driven management plane (YANG / NETCONF via
 sysrepo + Netopeer2), and a Protocol Buffers telemetry stream.
 
-> Status: **M2 complete** — the full model-driven management plane works end
-> to end: a real NETCONF client provisions the device and reads live state
-> through Netopeer2 + sysrepo, running in an ARM Linux container.
-> M3 (protobuf/ZeroMQ telemetry) is next; see the roadmap below.
+> Status: **M3 complete** — the full vertical slice works end to end in an
+> ARM Linux container: a real NETCONF client provisions the device through
+> Netopeer2 + sysrepo, and a Protocol Buffers telemetry stream (ZeroMQ
+> pub/sub) reports live port powers, OSNR, and pre-FEC BER once per tick.
 
 ## Why
 
@@ -75,8 +75,8 @@ CI (GitHub Actions) runs the unit tests plus `gcovr` line coverage (fail under
 |---|---|---|
 | M1 | C++ device core, HAL, GoogleTest suite, CMake, CI (coverage/cppcheck/valgrind) | ✅ |
 | M2 | YANG module; sysrepo + Netopeer2 NETCONF server; `onsim-netconfd` reconciliation daemon; end-to-end ncclient demo in an ARM Linux container | ✅ |
-| M3 | Protocol Buffers telemetry schema; ZeroMQ pub/sub publisher + Python subscriber | ⬜ |
-| M4 | Integration demo recording, debugging notes, CI image build | ⬜ |
+| M3 | Protocol Buffers telemetry schema; ZeroMQ pub/sub publisher in the daemon tick loop + Python subscriber CLI | ✅ |
+| M4 | Integration demo recording, debugging notes, CI image build | 🔄 |
 
 ## Try the NETCONF demo (Docker)
 
@@ -94,6 +94,14 @@ a colliding wavelength and shows the device rejecting the whole transaction:
 [3] provoke a wavelength collision (ch40 to port 2 again)
     device rejected it, as it should: cross-connect 'clash':
     wavelength collision on output port
+```
+
+The demo ends with the telemetry stream (protobuf over ZeroMQ pub/sub,
+topic `telemetry`, port 5556):
+
+```
+tick=9  p1:-60.00dBm p2:-16.00dBm p3:-16.00dBm p4:-60.00dBm  \
+        xpdr[up 400G QAM16] osnr=30.14dB ber=7.31e-06
 ```
 
 Design note: `onsim-netconfd` applies configuration by declarative

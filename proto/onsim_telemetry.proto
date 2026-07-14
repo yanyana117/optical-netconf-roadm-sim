@@ -1,0 +1,38 @@
+// Streaming telemetry schema for the simulated optical NE.
+// Published once per simulation tick over ZeroMQ PUB (topic "telemetry"),
+// serialized with Protocol Buffers.
+syntax = "proto3";
+
+package onsim.telemetry;
+
+message PortSample {
+  uint32 number = 1;
+  bool enabled = 2;
+  double input_power_dbm = 3;
+  double output_power_dbm = 4;
+  bool los_alarm = 5;
+}
+
+message TransponderSample {
+  bool admin_up = 1;
+  uint32 line_rate_gbps = 2;
+
+  enum Modulation {
+    QPSK = 0;
+    QAM8 = 1;
+    QAM16 = 2;
+  }
+  Modulation modulation = 3;
+
+  double osnr_db = 4;
+  double pre_fec_ber = 5;
+  bool ber_degrade_alarm = 6;
+}
+
+message TelemetrySample {
+  // Monotonic tick counter of the device simulation (not wall time, so
+  // replays are deterministic).
+  uint64 tick = 1;
+  repeated PortSample ports = 2;
+  TransponderSample transponder = 3;
+}

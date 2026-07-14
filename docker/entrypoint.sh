@@ -22,6 +22,9 @@ echo 'root:onsim' | chpasswd
 case "${1:-demo}" in
   demo)
     python3 /onsim/docker/demo_netconf.py
+    echo ""
+    echo "== protobuf telemetry stream (5 samples) =="
+    PYTHONPATH=/onsim/tools python3 /onsim/tools/telemetry_sub.py --samples 5
     ;;
   shell)
     exec bash

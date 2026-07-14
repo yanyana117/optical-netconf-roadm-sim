@@ -9,7 +9,8 @@ FROM debian:trixie-slim
 RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
         build-essential cmake pkg-config git \
         libssl-dev libssh-dev libpcre2-dev libcurl4-openssl-dev \
-        python3 python3-ncclient openssh-client procps \
+        python3 python3-ncclient python3-zmq python3-protobuf openssh-client procps \
+        libzmq3-dev cppzmq-dev protobuf-compiler libprotobuf-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # --- CESNET NETCONF stack, pinned versions ---
@@ -45,11 +46,14 @@ COPY include include
 COPY src src
 COPY netconf netconf
 COPY yang yang
+COPY proto proto
+COPY tools tools
 COPY docker/entrypoint.sh docker/demo_netconf.py docker/
 
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DONSIM_NETCONF=ON -DONSIM_BUILD_TESTS=OFF \
     && cmake --build build -j2 \
-    && cp build/onsim-netconfd /usr/local/bin/
+    && cp build/onsim-netconfd /usr/local/bin/ \
+    && protoc --python_out=tools -I proto proto/onsim_telemetry.proto
 
-EXPOSE 830
+EXPOSE 830 5556
 ENTRYPOINT ["/onsim/docker/entrypoint.sh"]

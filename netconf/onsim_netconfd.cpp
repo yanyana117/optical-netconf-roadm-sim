@@ -27,6 +27,10 @@
 
 #include "onsim/hal.h"
 
+#ifdef ONSIM_TELEMETRY
+#include "telemetry_pub.hpp"
+#endif
+
 namespace {
 
 constexpr const char* kModule = "onsim-device";
@@ -244,11 +248,21 @@ int main() {
 
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
+
+#ifdef ONSIM_TELEMETRY
+    onsim::TelemetryPublisher telemetry("tcp://*:5556", kDegrees);
+    std::printf("onsim-netconfd: telemetry PUB on tcp://*:5556\n");
+#endif
     std::printf("onsim-netconfd: %d-degree ROADM + transponder ready\n", kDegrees);
 
+    uint64_t tick = 0;
     while (g_running) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         onsim_tick(g_dev);
+        ++tick;
+#ifdef ONSIM_TELEMETRY
+        telemetry.publish(g_dev, tick);
+#endif
     }
 
     sr_unsubscribe(sub);
