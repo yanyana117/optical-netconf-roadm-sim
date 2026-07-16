@@ -1,5 +1,7 @@
 # optical-netconf-roadm-sim
 
+[![ci](https://github.com/yanyana117/optical-netconf-roadm-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/yanyana117/optical-netconf-roadm-sim/actions/workflows/ci.yml)
+
 A **simulated optical network element** (ROADM + coherent transponder) with the
 management stack used on real carrier-grade optical platforms: a C/C++ hardware
 abstraction layer, a model-driven management plane (YANG / NETCONF via
@@ -11,6 +13,21 @@ and ZeroMQ pub/sub.
 > Netopeer2 + sysrepo, the management plane and device daemon exchange
 > commands and telemetry over a DDS bus (Cyclone DDS), and Protocol Buffers
 > telemetry streams to C++ and Python subscribers.
+
+![demo](docs/assets/demo.svg)
+
+**At a glance**
+
+- Carrier-grade management patterns, end to end: model-driven configuration
+  (YANG / NETCONF), transactional rejection of invalid provisioning, and a
+  multi-process architecture where the management plane and the device daemon
+  exchange commands and telemetry over a DDS bus.
+- Engineering hygiene throughout: 18 unit tests, an 85% line-coverage gate,
+  cppcheck, valgrind, and a CI job that builds the full container and
+  smoke-runs the NETCONF + DDS demo on every push.
+- Measured, not just built: BER-vs-OSNR characterization of the device model
+  and a full-stack configuration-latency benchmark (see
+  [Experiments](#experiments)).
 
 ## Why
 
@@ -116,6 +133,37 @@ never diverges from hardware, and SR_EV_ABORT reconciles back. Operational
 reads are served from the DDS telemetry cache, and rate/modulation changes
 are sequenced through admin-down automatically, the way real NE management
 planes do.
+
+## Experiments
+
+**1. Transponder model characterization.** `onsim-ber-sweep` sweeps received
+OSNR across every modulation x line-rate configuration and records the
+model's pre-FEC BER ([CSV](docs/experiments/ber_vs_osnr.csv)); denser
+modulation and faster rates shift the curves right, and the SD-FEC crossing
+is where the device raises its BER-degrade alarm:
+
+![BER vs OSNR](docs/experiments/ber_vs_osnr.png)
+
+```bash
+cmake -B build && cmake --build build --target onsim-ber-sweep
+./build/onsim-ber-sweep | python3 tools/plot_ber_sweep.py ber_vs_osnr.png
+```
+
+**2. Configuration-transaction latency.** `docker run --rm onsim-ne bench`
+times 60 NETCONF `<edit-config>` transactions, each doing real provisioning
+work through the whole stack (ncclient, Netopeer2, sysrepo, onsim-netconfd,
+DDS request/reply, onsim-devd, HAL). On an ARM Linux container (2 vCPU):
+
+| metric | latency |
+|---|---|
+| mean | 222.9 ms |
+| p50 | 222.0 ms |
+| p95 | 244.6 ms |
+| max | 250.7 ms |
+
+The DDS request/reply client polls at 10 ms granularity, so a slice of this
+budget is the poll interval rather than transport time; the rest is the SSH
+and NETCONF/sysrepo transaction machinery.
 
 ## Notes
 

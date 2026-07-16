@@ -54,7 +54,7 @@ COPY yang yang
 COPY proto proto
 COPY tools tools
 COPY idl idl
-COPY docker/entrypoint.sh docker/demo_netconf.py docker/
+COPY docker/entrypoint.sh docker/demo_netconf.py docker/bench_netconf.py docker/
 
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DONSIM_NETCONF=ON -DONSIM_BUILD_TESTS=OFF \
     && cmake --build build -j2 \

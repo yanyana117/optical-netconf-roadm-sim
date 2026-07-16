@@ -19,6 +19,11 @@ if(ONSIM_COVERAGE)
   target_link_options(onsim PUBLIC --coverage)
 endif()
 
+# --- experiment tool: BER-vs-OSNR sweep of the transponder model ---
+add_executable(onsim-ber-sweep tools/ber_sweep.cpp)
+target_link_libraries(onsim-ber-sweep PRIVATE onsim)
+target_compile_options(onsim-ber-sweep PRIVATE -Wall -Wextra)
+
 # --- NETCONF management daemon (needs libsysrepo; built in the container) ---
 option(ONSIM_NETCONF "Build the NE daemons (management plane + device daemon)" OFF)
 if(ONSIM_NETCONF)

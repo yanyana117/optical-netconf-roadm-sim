@@ -33,6 +33,9 @@ case "${1:-demo}" in
     echo "== DDS telemetry (Cyclone DDS, protobuf payloads, 3 samples) =="
     onsim-dds-sub 3
     ;;
+  bench)
+    python3 /onsim/docker/bench_netconf.py
+    ;;
   shell)
     exec bash
     ;;
