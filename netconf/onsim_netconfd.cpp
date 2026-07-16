@@ -211,8 +211,8 @@ void onSignal(int) { g_running = false; }
 }  // namespace
 
 int main() {
-    onsim::DdsControlClient bus;
-    onsim::DdsTelemetryCache cache;
+    static onsim::DdsControlClient bus;
+    static onsim::DdsTelemetryCache cache;
     g_bus = &bus;
     g_cache = &cache;
 

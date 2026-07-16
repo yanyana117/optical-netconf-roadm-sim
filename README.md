@@ -6,10 +6,11 @@ abstraction layer, a model-driven management plane (YANG / NETCONF via
 sysrepo + Netopeer2), and Protocol Buffers telemetry over **DDS (Cyclone DDS)**
 and ZeroMQ pub/sub.
 
-> Status: **M3 complete** — the full vertical slice works end to end in an
-> ARM Linux container: a real NETCONF client provisions the device through
-> Netopeer2 + sysrepo, and a Protocol Buffers telemetry stream (ZeroMQ
-> pub/sub) reports live port powers, OSNR, and pre-FEC BER once per tick.
+> Status: **complete (M1–M6)** — a multi-component network element running in
+> an ARM Linux container: a real NETCONF client provisions the device through
+> Netopeer2 + sysrepo, the management plane and device daemon exchange
+> commands and telemetry over a DDS bus (Cyclone DDS), and Protocol Buffers
+> telemetry streams to C++ and Python subscribers.
 
 ## Why
 
@@ -109,10 +110,12 @@ tick=9  p1:-60.00dBm p2:-16.00dBm p3:-16.00dBm p4:-60.00dBm  \
 
 Design note: `onsim-netconfd` applies configuration by declarative
 reconciliation. On every transaction (SR_EV_CHANGE) it reads the candidate
-config and reconciles the HAL to it; a HAL rejection fails the transaction so
-the datastore never diverges from hardware, and SR_EV_ABORT reconciles back.
-Rate/modulation changes are sequenced through admin-down automatically, the
-way real NE management planes do.
+config and pushes it to `onsim-devd` as DDS request/reply commands; a device
+NACK, or an unreachable device daemon, fails the transaction so the datastore
+never diverges from hardware, and SR_EV_ABORT reconciles back. Operational
+reads are served from the DDS telemetry cache, and rate/modulation changes
+are sequenced through admin-down automatically, the way real NE management
+planes do.
 
 ## Notes
 

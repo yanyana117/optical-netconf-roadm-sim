@@ -60,3 +60,18 @@ The first Docker build "succeeded" with exit 0 while the log ended in a
 configure error: the build was run as `docker build ... | tail`, and the
 pipeline's status is the *tail*'s. Rebuilt with the full log written to a
 file and the real exit code echoed. `set -o pipefail` exists for a reason.
+
+## 6. CMake "cannot determine linker language" for generated IDL code
+
+Adding the Cyclone DDS IDL library failed at generate time:
+`CMAKE_C_CREATE_STATIC_LIBRARY missing`. Two stacked causes: the generated
+`.c` file does not exist at configure time (so CMake cannot infer a
+language), and the project had only enabled CXX. Fix:
+`project(... C CXX)` plus `set_target_properties(... LINKER_LANGUAGE C)`.
+
+## 7. cppcheck danglingLifetime on the bus globals
+
+After the multi-component split, `g_bus = &bus;` with `bus` as a `main()`
+local tripped cppcheck's danglingLifetime check. Harmless in practice (the
+callbacks only run while `main` is alive) but sloppy in principle; made the
+objects `static` so their lifetime is the program's and the analyzer agrees.
